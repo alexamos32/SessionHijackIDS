@@ -13,10 +13,20 @@ from scapy.all import *
 #       Create thread to monitor for Session Hijack conditions to be met
 #       Create thread that sleeps for 10 minutes then runs clearOldReplies and continues sleeping
 #       NOTE: I think all threads will have to be daemons as there will be no need to rejoin them
+#       Add Dictionary for storing FTP usernames and timestamps
+
 
 class ArpLog:
     def __init__(self):
         self.value = dict()
+        self.ftp = dict()
+
+    def addUser(self, user):
+        self.ftp[user] = list()
+        self.ftp[user].append(datetime.now().timestamp())
+    
+    def addUserAttempt(self, user):
+        self.ftp[user].append(datetime.now().timestamp())
 
     def addIp(self, IPaddr):
         self.value[IPaddr] = dict()
@@ -30,7 +40,14 @@ class ArpLog:
     def searchIP(self, IPaddr):
         if IPaddr in self.value:
             return True
+        else:
+            return False
 
+    def searchUser(self, user):
+        if user in self.ftp:
+            return True
+        else:
+            return False
     def clearOldReplies(self):
         time30min = datetime.now().timestamp() - 1800
         #loop through each ip and remove all replies older than 30 min
@@ -97,7 +114,18 @@ def log_arp_packets(pkt):
         #pkt.show()
         arpLog.printLog()
         return 
-        
+    elif pkt.haslayer(TCP) and pkt.haslayer(Raw):
+        if pkt[TCP].dport == 21 or pkt[TCP].sport == 21:
+            data = pkt[Raw].load()
+            if 'USER ' in data:
+                user = data.split('USER ')[1].strip()
+                if arpLog.searchUser(user):
+                    #ADD METHOD FOR LOGGING USER ATTEMPT
+                    pass
+                else:
+                    arpLog.addUser(user)
+            
+            
 
 def monitor_thread(name):
     while True:
