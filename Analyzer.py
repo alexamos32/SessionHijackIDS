@@ -6,6 +6,8 @@ import threading
 import time
 import datetime
 from scapy.all import *
+from ArpLog import ArpLog
+from PktLog import PktLog
 
 
 #TODO:  Finish clear method to clear replies that are older than 30 minutes
@@ -16,116 +18,112 @@ from scapy.all import *
 #       Add Dictionary for storing FTP usernames and timestamps
 
 
-class ArpLog:
-    def __init__(self):
-        self.value = dict()
-        self.ftp = dict()
-
-    def addUser(self, user):
-        self.ftp[user] = list()
-        self.ftp[user].append(datetime.now().timestamp())
-    
-    def addUserAttempt(self, user):
-        self.ftp[user].append(datetime.now().timestamp())
-
-    def addIp(self, IPaddr):
-        self.value[IPaddr] = dict()
-        self.value[IPaddr]["count"] = 1
-        self.value[IPaddr]["timestamp"] = [datetime.now().timestamp()]
-
-    def addReply(self, IPaddr):
-        self.value[IPaddr]["timestamp"].append(datetime.now().timestamp())
-        self.value[IPaddr]["count"] +=1
-
-    def searchIP(self, IPaddr):
-        if IPaddr in self.value:
-            return True
-        else:
-            return False
-
-    def searchUser(self, user):
-        if user in self.ftp:
-            return True
-        else:
-            return False
-    def clearOldReplies(self):
-        time30min = datetime.now().timestamp() - 1800
-        #loop through each ip and remove all replies older than 30 min
-        for i in self.value:
-            oldest = -1
-            j=0
-            #loop through timestamps and 
-            for j in (0, len(self.value[i]["timestamp"])-1):
-                if self.value[i]["timestamp"][j] >= time30min:
-                    j -=1
-                    break
-            #Clear all timestamps if all timestamps are old
-            if j == (len(self.value[i]["timestamp"])-1):
-                self.value[i]["timestamp"].clear()
-                self.value[i]["count"] = 0
-                continue
-            
-            #Go to next IP if all timestamps are recent
-            elif j < 0:
-                continue
-
-            #Remove Old elements
-            else:
-                length = len(self.value[i]["timestamp"])
-                #create a sublist of elements newer than 30 min
-                temp = self.value[i]["timestamp"][j+1:length-1]
-                self.value[i]["count"] -= (j+1)
-                self.value[i]["timestamp"] = temp
-                continue
-            
-        return
-    #Print Arp Log
-    def printLog(self):
-        for i in self.value:
-            print("IP: ", i, "Count: ", self.value[i]["count"])
-
-    #return log length
-    def log_length(self):
-        return len(self.value)
-    
-    #returns a list of ips and response counts for any ips breaking the 10 response threshold
-    #Meaning arp-spoofing is happening from those IPs
-    def check_arpspoof(self):
-        temp = list()
-        for addr in self.value:
-            if self.value[addr]["count"] >= 10:
-                temp.append(addr)
-                temp.append(self.value[addr]["count"])
-        return temp
+class PktLog:
+    def __init__(self, srcIP, dstIP, srcPort, dstPort, protocol):
+        self.srcIP = srcIP
+        self.dstIP = dstIP
+        self.srcPort = srcPort
+        self.protocol = protocol
+        self.timestamp = datetime.now().timestamp()
 
 
 #Thread function for running the packet sniffer
 def packet_sniff_thread(name):
-    sniff(prn=log_arp_packets, filter='arp', store=0)
+    sniff(prn=log_packet, filter='arp', store=0)
+    #sniff(prn=log_arp_packets, store=0)
 
 #Logging sniffed Arp packets
-def log_arp_packets(pkt):
-    if ARP in pkt and pkt[ARP].op == 2:
-        srcIP = pkt[ARP].psrc
-        if arpLog.searchIP(srcIP):
-            arpLog.addReply(srcIP)
+def log_arp(sip, timestamp):
+    if arpLog.searchIP(sip):
+        arpLog.addReply(sip, timestamp)
+    else:
+        arpLog.addIp(sip, timestamp)
+    #arpLog.printLog()
+
+
+#Sniffing FTP Telnet Username
+
+#STARTING CODE FOR SNIFFING USERNAME
+#elif pkt.haslayer(TCP) and pkt.haslayer(Raw):
+#    if pkt[TCP].dport == 21 or pkt[TCP].sport == 21:
+#        data = pkt[Raw].load()
+#        if 'USER ' in data:
+#            user = data.split('USER ')[1].strip()
+#            if arpLog.searchUser(user):
+#                #ADD METHOD FOR LOGGING USER ATTEMPT
+#                pass
+#            else:
+#                arpLog.addUser(user)
+            
+
+
+def log_packet(pkt):
+    return     
+    sip = ''
+    dip = ''
+    sport = -1
+    dport = -1
+    protocol = ''
+    timestamp = datetime.now().timestamp()
+    if ARP in pkt:
+        #op = 2 is an arp reply, op = 1 is a request
+        if pkt[ARP].op == 2:
+            #Saving pkt data
+            sip = pkt[ARP].psrc
+            dip = pkt[ARP].pdst
+            protocol = 'ARP'          
+            log_arp()
+
+    elif ICMP in pkt:
+        sip = pkt[IP].src
+        dip = pkt[IP].dst
+        protocol = 'ICMP'
+    elif DNS in pkt:
+        sip = pkt[IP].src
+        dip = pkt[IP].dst
+        sport = pkt[UDP].sport
+        dport = pkt[UDP].dport
+        protocol = 'DNS'
+
+
+    elif TCP in pkt:
+        sip = pkt[IP].src
+        dip = pkt[IP].dst
+        sport = pkt[TCP].sport
+        dport = pkt[TCP].dport
+
+        #Saving common protocols
+        if sport == 20 or sport == 21 or dport == 20 or dport == 21:
+            protocol = 'FTP'
+            #TODO: CALL USERNAME SNIFF FUNCTION
+        elif sport == 22 or dport == 22:
+            protocol = 'SSH'
+        elif sport == 23 or dport == 23:
+            protocol = 'SSH'
+            #TODO: CALL USERNAME SNIFF FUNCTION
+        elif sport == 25 or dport == 25:
+            protocol = 'SMTP'
+        elif sport == 80 or dport == 80:
+            protocol = 'HTTP'
+        elif sport == 110 or dport == 110:
+            protocol = 'POP'
+        elif sport == 143 or dport == 143:
+            protocol = 'IMAP'
+        elif sport == 443 or dport == 443:
+            protocol = 'HTTPS'
+        #Otherwise default to TCP
         else:
-            arpLog.addIp(srcIP)
-        #pkt.show()
-        arpLog.printLog()
-        return 
-    elif pkt.haslayer(TCP) and pkt.haslayer(Raw):
-        if pkt[TCP].dport == 21 or pkt[TCP].sport == 21:
-            data = pkt[Raw].load()
-            if 'USER ' in data:
-                user = data.split('USER ')[1].strip()
-                if arpLog.searchUser(user):
-                    #ADD METHOD FOR LOGGING USER ATTEMPT
-                    pass
-                else:
-                    arpLog.addUser(user)
-            
-            
+            protocol = 'TCP'
+        
+    elif UDP in pkt:
+        sip = pkt[IP].src
+        dip = pkt[IP].dst
+        sport = pkt[UDP].sport
+        dport = pkt[UDP].dport
+        protocol = 'UDP'
+
+        #TODO: CALL FUNCTION TO STORE THE PACKET IN pktLog
+        
 
 def monitor_thread(name):
     while True:
@@ -135,6 +133,7 @@ def monitor_thread(name):
         time.sleep(5)
 
 arpLog = ArpLog()
+pktLog = list()
 
 sniff_thread = threading.Thread(target=packet_sniff_thread, args=(1,))
 sniff_thread.start()
