@@ -1,39 +1,34 @@
 
+import datetime
 #TODO: turn arplog into a dict that will save arppackets with an ip and time stamp and count
 class ArpLog:
     def __init__(self):
         self.arp = dict()
 
 
-    def addIp(self, IPaddr, timestamp):
-        self.arp[IPaddr] = dict()
-        self.arp[IPaddr]["count"] = 1
-        self.arp[IPaddr]["timestamp"] = [timestamp]
+    def add_reply(self, IPaddr, timestamp):
+        if IPaddr in self.arp:
+            self.arp[IPaddr]["timestamp"].append(timestamp)
+            self.arp[IPaddr]["count"] +=1
+        else:
+            self.arp[IPaddr] = dict()
+            self.arp[IPaddr]["count"] = 1
+            self.arp[IPaddr]["timestamp"] = [timestamp]
 
-    def addReply(self, IPaddr, timestamp):
-        self.arp[IPaddr]["timestamp"].append(timestamp)
-        self.arp[IPaddr]["count"] +=1
-
-    def searchIP(self, IPaddr):
+    def search_ip(self, IPaddr):
         if IPaddr in self.arp:
             return True
-        else:
-            return False
+        return False
 
-    def searchUser(self, user):
-        if user in self.ftp:
-            return True
-        else:
-            return False
-    def clearOldReplies(self):
-        time30min = datetime.now().timestamp() - 1800
-        #loop through each ip and remove all replies older than 30 min
+    def cleanup(self):
+        time1min = datetime.now().timestamp() - 60
+        #loop through each ip and remove all replies older than 1 min
         for i in self.arp:
             oldest = -1
             j=0
             #loop through timestamps and 
             for j in (0, len(self.arp[i]["timestamp"])-1):
-                if self.arp[i]["timestamp"][j] >= time30min:
+                if self.arp[i]["timestamp"][j] >= time1min:
                     j -=1
                     break
             #Clear all timestamps if all timestamps are old
@@ -57,7 +52,7 @@ class ArpLog:
             
         return
     #Print Arp Log
-    def printLog(self):
+    def print_log(self):
         for i in self.arp:
             print("IP: ", i, "Count: ", self.arp[i]["count"])
 
