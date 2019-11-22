@@ -1,4 +1,4 @@
-
+#! /usr/bin/python3
 import datetime
 #TODO: turn arplog into a dict that will save arppackets with an ip and time stamp and count
 class ArpLog:
