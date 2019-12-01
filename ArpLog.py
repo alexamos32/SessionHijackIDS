@@ -1,60 +1,43 @@
 #! /usr/bin/python3
-import datetime
-#TODO: turn arplog into a dict that will save arppackets with an ip and time stamp and count
+import time
+#TODO: turn arplog into a dict that will save arppackets with an mac address, timestamp and count
 class ArpLog:
     def __init__(self):
         self.arp = dict()
 
 
-    def add_reply(self, IPaddr, timestamp):
-        if IPaddr in self.arp:
-            self.arp[IPaddr]["timestamp"].append(timestamp)
-            self.arp[IPaddr]["count"] +=1
+    def add_reply(self, mac, timestamp):
+        if mac in self.arp:
+            self.arp[mac]["timestamp"].append(timestamp)
+            self.arp[mac]["count"] +=1
         else:
-            self.arp[IPaddr] = dict()
-            self.arp[IPaddr]["count"] = 1
-            self.arp[IPaddr]["timestamp"] = [timestamp]
+            self.arp[mac] = dict()
+            self.arp[mac]["count"] = 1
+            self.arp[mac]["timestamp"] = [timestamp]
 
-    def search_ip(self, IPaddr):
-        if IPaddr in self.arp:
+    def search_ip(self, mac):
+        if mac in self.arp:
             return True
         return False
 
     def cleanup(self):
-        time1min = datetime.now().timestamp() - 60
+        time1min = time.time() - 60
         #loop through each ip and remove all replies older than 1 min
         for i in self.arp:
-            oldest = -1
             j=0
-            #loop through timestamps and 
-            for j in (0, len(self.arp[i]["timestamp"])-1):
-                if self.arp[i]["timestamp"][j] >= time1min:
-                    j -=1
-                    break
-            #Clear all timestamps if all timestamps are old
-            if j == (len(self.arp[i]["timestamp"])-1):
-                self.arp[i]["timestamp"].clear()
-                self.arp[i]["count"] = 0
+            if self.arp[i]['count'] == 0:
                 continue
-            
-            #Go to next IP if all timestamps are recent
-            elif j < 0:
-                continue
-
-            #Remove Old elements
-            else:
-                length = len(self.arp[i]["timestamp"])
-                #create a sublist of elements newer than 30 min
-                temp = self.arp[i]["timestamp"][j+1:length-1]
-                self.arp[i]["count"] -= (j+1)
-                self.arp[i]["timestamp"] = temp
-                continue
-            
+            #loop through timestamps and delete old ones
+            while self.arp[i]['timestamp'][j] < time1min:
+                del(self.arp[i]['timestamp'][j])
+                self.arp[i]['count'] -= 1
+                if self.arp[i]['count'] == 0:
+                    break         
         return
     #Print Arp Log
     def print_log(self):
         for i in self.arp:
-            print("IP: ", i, "Count: ", self.arp[i]["count"])
+            print("MAC: ", i, "Count: ", self.arp[i]["count"])
 
     #return log length
     def log_length(self):
@@ -64,9 +47,9 @@ class ArpLog:
     #Meaning arp-spoofing is happening from those IPs
     def check_arpspoof(self):
         temp = list()
-        for addr in self.arp:
-            if self.arp[addr]["count"] >= 10:
-                temp.append(addr)
-                temp.append(self.arp[addr]["count"])
+        for mac in self.arp:
+            if self.arp[mac]["count"] >= 10:
+                temp.append(mac)
+                temp.append(self.arp[mac]['timestamp'][0])
         return temp
 
