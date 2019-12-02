@@ -4,12 +4,12 @@ import logging
 import threading 
 import time
 from scapy.all import *
-import ArpLog
-import PktLog
-import UserLog 
+from modules import ArpLog
+from modules import PktLog
+from modules import UserLog 
 import uuid
 import re
-import RotatingFileOpener
+from modules import RotatingFileOpener
 import traceback
 
 

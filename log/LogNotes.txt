@@ -1,0 +1,4 @@
+Packet Logs will be saved in folder.
+File names based on date logged.
+
+Saves in the format: Timestamp, Source IP, Source Port, Dest IP, Dest Port, Protocol
