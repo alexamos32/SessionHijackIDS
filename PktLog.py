@@ -18,6 +18,10 @@ class PktLog:
         for n in (self.i, len(self.log)-1):
             print(self.log[n].sip, ' ', self.log[n].protocol, ' ', self.log[n].timestamp)
         self.i = len(self.log)
+    
+    def cleanup(self):
+        self.log = list()
+        self.i = 0
         
 
 
