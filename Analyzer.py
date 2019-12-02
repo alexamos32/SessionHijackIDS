@@ -1,24 +1,17 @@
 #! /usr/bin/python3
 #---------- IMPORTS -----------
-import sys
 import logging 
 import threading 
 import time
-
 from scapy.all import *
-from ArpLog import ArpLog
-from PktLog import PktLog
-from UserLog import UserLog 
+import ArpLog
+import PktLog
+import UserLog 
 import uuid
 import re
-#import datetime
+import RotatingFileOpener
+import traceback
 
-#TODO:  Finish clear method to clear replies that are older than 30 minutes
-#       Create thread to logs arp replies
-#       Create thread to monitor for Session Hijack conditions to be met
-#       Create thread that sleeps for 10 minutes then runs clearOldReplies and continues sleeping
-#       NOTE: I think all threads will have to be DAEMONS as there will be no need to rejoin them
-#       Add Dictionary for storing FTP usernames and timestamps
 
 
 #-----------PRINTING TIME-----------
@@ -27,24 +20,34 @@ def get_datetime(seconds):
     datestring = str(secDate.tm_hour) +':' + str(secDate.tm_min) + ':' + str(secDate.tm_sec) + ': ' + str(secDate.tm_mday) + '/' + str(secDate.tm_mon) + '/' + str(secDate.tm_year)
     return datestring
 
+def get_timestamp(seconds):
+    secDate= time.localtime(seconds)
+    timestring = str(secDate.tm_hour) +':' + str(secDate.tm_min) + ':' + str(secDate.tm_sec)
+    return timestring
+
+
 #---------- LOGGING PACKETS -----------
-def log_packet(pkt):
-    #return     
+def log_packet(pkt): 
     sip = ''
     dip = ''
     sport = -1
     dport = -1
     protocol = ''
     timestamp = time.time()
-    #print(timestamp)
     try:
+        #Check for IPv4 or 6 and save src and dst IP
         if IP in pkt:
             sip = pkt[IP].src
-            dip = pkt[IP].src
-        elif IPv6 in pkt:
+            dip = pkt[IP].dst
+            if pkt[IP].proto == 'igmp':
+                protocol = 'igmp'
+        elif pkt.getlayer(IPv6):
             sip = pkt[IPv6].src
-            dip = pkt[IPv6].src
+            dip = pkt[IPv6].dst
+            if pkt[IPv6].nh == 'ICMPv6':
+                protocol = 'ICMPv6'            
         
+        #Save src and dst ports
         if TCP in pkt:
                 sport = pkt[TCP].sport
                 dport = pkt[TCP].dport
@@ -52,32 +55,38 @@ def log_packet(pkt):
                 sport = pkt[UDP].sport
                 dport = pkt[UDP].dport
 
+        #If ARP log arp packet
         if ARP in pkt:
             #op = 2 is an arp reply, op = 1 is a request
+            sip = pkt[ARP].psrc
+            dip = pkt[ARP].pdst
+            sport = 219
+            dport = 219
+            protocol = 'ARP'
+
             if pkt[ARP].op == 2:
-                #Saving pkt data
-                sip = pkt[ARP].psrc
-                dip = pkt[ARP].pdst
+                #Saving Arp data to ArpLog
                 mac = pkt[ARP].hwsrc
-                protocol = 'ARP'         
-                arpLogLock.acquire()
-                try:
-                    arpLog.add_reply(mac, timestamp)
-                finally:
-                    arpLogLock.release() 
+                if not(mac == selfmac):
+                    arpLogLock.acquire()
+                    try:
+                        arpLog.add_reply(mac, timestamp)
+                    except Exception:
+                        traceback.print_exc() 
+                    finally:
+                        arpLogLock.release() 
                 
         elif ICMP in pkt:
             protocol = 'ICMP'
         elif DNS in pkt:
             protocol = 'DNS'
-
+        #Saving common protocols
         elif TCP in pkt:
-            #Saving common protocols
+            #Log Username Attempts
             if sport == 20 or dport == 20 or sport == 21 or dport == 21:
                 protocol = 'FTP'
                 if pkt.getlayer(Raw):
                     data = pkt.getlayer(Raw).load
-                    #print(data)
                     if 'USER ' in str(data):
                         mac = pkt.getlayer(Ether).src
                         user = str(data).split('USER ')[1].strip()
@@ -88,8 +97,6 @@ def log_packet(pkt):
                                 userLog.add_user(user, mac, timestamp)
                             finally:
                                 userLogLock.release()
-
-                        #userLog.print_log()
 
             elif sport == 22 or dport == 22:
                 protocol = 'SSH'
@@ -119,9 +126,8 @@ def log_packet(pkt):
         finally:
             pktLogLock.release()
             
-    except Exception as e:
-        print("Exception Occured")
-        print(e)
+    except Exception:
+        traceback.print_exc() 
         pkt.show()
 
 
@@ -132,36 +138,30 @@ def log_packet(pkt):
 
 #Monitor for Attacks
 def monitor_thread():
-    
     while True:
-        time.sleep(65)
-
-        #print("Attacker List")
-       # print(*(attackerMac))
-        
-        
+        time.sleep(60)
         arpspoofList = list()
         userList = list()
-        #pktLog.print_log()
-        #arpspoof_list = arpLog.check_arpspoof()
-        #if len(arpspoof_list)>0:
-        #    print("Arpspoof detected from: ", arpspoof_list[0])
-        #time.sleep(5)
+        #Get list of host that have sent >=10 arp replies in 1 min
         arpLogLock.acquire()
         try:  
             arpspoofList = arpLog.check_arpspoof()
-
         finally:
             arpLogLock.release()
         
+        #Get list of users with logins >=2
         userLogLock.acquire()
         try:
             userList = userLog.check_login_count()
         finally:
             userLogLock.release()
+        
+        #print(*userList)
 
         arpLen = len(arpspoofList)  
         userLen = len(userList)
+
+        #Report Arpspoof if detected
         if arpLen > 0:
             i = 0
             while i < arpLen:
@@ -174,20 +174,18 @@ def monitor_thread():
                     datestring = get_datetime(arpspoofList[i+1])
                     print('Spoof Started At: ', datestring)
                     print('-----------------------------')
-                
                 i+=2
         
+        #if Multiple user attempts AND
+        #Mac of a user attempt == mac of Arpoof sender, Detect Session Hijack
         if userLen > 0:
-            #print("WHAT")
             i=0
             while i < userLen:
                 isFound = False
                 for mac in userList[i+1]:
-                    #print('User, ',mac)
                     if mac in attackerMac:
                         if userList[i] in usersStolen:
                             continue
-                       # print("HEEYYYY")
                         isFound = True
                         break
                 
@@ -198,60 +196,78 @@ def monitor_thread():
                     print('-------------------------------')
                     usersStolen.append(userList[i])
                 i +=2
-
-
-            
-
     
 
 #Packet Sniffer
 def packet_sniff_thread():
-#sniff(prn=log_packet, filter='arp', store=0)
     sniff(prn=log_packet, store=0)
 
 
-#Cleanup Thread
-#Clears arplog of packets older than a minute
-#Clears the packetlog of packets older than a day
+#Cleanup Thread, Run every minute
 def cleanup_thread():
+    pktLogTimer = time.time()
+    log = None
     while True:
         time.sleep(60)
-
+        
+        #Run Arplog cleanup
         arpLogLock.acquire()
         try:
             arpLog.cleanup()
-           # arpLog.print_log()
         finally:
             arpLogLock.release()
         
+        #Run UserLog cleanup
         userLogLock.acquire()
         try:
             userLog.cleanup()
         finally:
             userLogLock.release()
-
         
+        #Clear packet log and write to log file
+        currentTime = time.time()
+        if currentTime - 600 >= pktLogTimer: 
+            pktLogLock.acquire()
+            try:
+                log = pktLog.log
+                pktLog.cleanup()
+            finally: 
+                pktLogLock.release()
+
+            if(len(log) > 0):
+                entries = list()
+                for packet in log:
+                    entries.append(get_timestamp(packet.timestamp) + ' \t\t' + str(packet.sip) + ' \t\t' + str(packet.sport) + ' \t\t' + str(packet.dip) + ' \t\t' + str(packet.dport) + ' \t\t' + str(packet.protocol)+' \n')
+                logger.write(entries)
+                entries.clear()
         
 
+try:
+    #Creating File log object
+    logger = RotatingFileOpener.RotatingFileOpener('log', prepend='Pkt_Log_Data-', append='.txt')
+    logger.enter()
 
+    selfmac = ':'.join(re.findall('..', '%012x' % uuid.getnode()))
 
-selfmac = ':'.join(re.findall('..', '%012x' % uuid.getnode()))
-arpLog = ArpLog()
-pktLog = PktLog()
-userLog = UserLog()
-arpLogLock = threading.Lock()
-pktLogLock = threading.Lock()
-userLogLock = threading.Lock()
+    arpLog = ArpLog.ArpLog()
+    pktLog = PktLog.PktLog()
+    userLog = UserLog.UserLog()
 
-attackerMac = list()
-attackStart = list()
-usersStolen = list()
+    arpLogLock = threading.Lock()
+    pktLogLock = threading.Lock()
+    userLogLock = threading.Lock()
 
-sniff_thread = threading.Thread(target=packet_sniff_thread)
-sniff_thread.start()
+    attackerMac = list()
+    attackStart = list()
+    usersStolen = list()
 
-cleanup_thread = threading.Thread(target=cleanup_thread)
-cleanup_thread.start()
+    sniff_thread = threading.Thread(target=packet_sniff_thread)
+    sniff_thread.start()
 
-mon_thread = threading.Thread(target=monitor_thread)
-mon_thread.start()
+    cleanup_thread = threading.Thread(target=cleanup_thread)
+    cleanup_thread.start()
+
+    mon_thread = threading.Thread(target=monitor_thread)
+    mon_thread.start()
+except Exception:
+    traceback.print_exc() 
