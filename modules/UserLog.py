@@ -1,3 +1,4 @@
+#! /usr/bin/python3
 import time
 
 class UserLog:
@@ -20,11 +21,6 @@ class UserLog:
             self.users[user]['count'] = 1
             self.users[user]['timestamp'] = [timestamp]
             self.users[user]['mac'] = [mac]         
-
-    def search_user(self, user):
-        if user in self.users:
-            return True
-        return False
   
     def check_login_count(self):
         userList = list()

@@ -226,7 +226,7 @@ def cleanup_thread():
         
         #Clear packet log and write to log file
         currentTime = time.time()
-        if currentTime - 600 >= pktLogTimer: 
+        if currentTime - 60 >= pktLogTimer: 
             pktLogLock.acquire()
             try:
                 log = pktLog.log

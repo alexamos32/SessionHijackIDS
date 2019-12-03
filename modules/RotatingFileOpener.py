@@ -1,3 +1,4 @@
+#! /usr/bin/python3
 import os
 import time
 
@@ -19,9 +20,6 @@ class RotatingFileOpener:
         self.file.close()
         return self
 
-   # def __exit__(self, *args):
-      #  return getattr(self.file, '__exit__')(*args)
-
     def day_changed(self):
         return self.day != time.localtime().tm_mday
 
@@ -36,7 +34,4 @@ class RotatingFileOpener:
             self.file.write(arg)
         self.file.close()
    
-   
-    #def __getattr__(self, attr):
-   #     return getattr(self._file, attr)
-   ##     return iter(self._file)
+  
